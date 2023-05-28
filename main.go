@@ -71,9 +71,6 @@ func main() {
 			// assume dovecot
 			timeout = 24 * time.Hour
 			a = sasl.NewPlainClient("", userinfo["user"], userinfo["password"])
-			// _, ir, _ := a.Start()
-			// fmt.Print(base64.StdEncoding.EncodeToString(ir))
-			// os.Exit(0)
 			folder_list = make(map[string]string)
 			folder_list["inbox"] = "INBOX"
 			folder_list["sent"] = "sent"
@@ -177,6 +174,9 @@ func main() {
 				panic(e)
 			}
 			defer c.Logout()
+			// if _, y, e := a.Start(); e == nil {
+			// 	fmt.Println(base64.StdEncoding.EncodeToString(y))
+			// }
 			if e := c.Authenticate(a); e != nil {
 				panic(e)
 			}
@@ -382,22 +382,24 @@ func main() {
 									}
 								}
 							}
-							// some flags got added remote -> local
-							// don't print
 							if length < len(flags) {
+								// some flags got added remote -> local
+								// fmt.Println("R -> L", msg.SeqNum, key)
 								if e := D.SetFlags(key, flags); e != nil {
 									panic(e)
 								}
 							}
-							// some flags got added local -> remote
-							// don't print
 							if len(remote_flags) < len(flags) {
-								tmp := new(imap.SeqSet)
-								tmp.AddNum(msg.SeqNum)
+								// some flags got added local -> remote
+								// fmt.Println("L -> R", msg.SeqNum, key)
 								fflags := deparseFlags(flags)
-								if e := c.Store(tmp, imap.FormatFlagsOp(imap.AddFlags, true), fflags, nil); e != nil {
-									panic(e)
-								}
+								go func(seqnum uint32, out_flags []interface{}) {
+									tmp := new(imap.SeqSet)
+									tmp.AddNum(seqnum)
+									if e := c.Store(tmp, imap.FormatFlagsOp(imap.AddFlags, true), out_flags, nil); e != nil {
+										panic(e)
+									}
+								}(msg.SeqNum, fflags)
 							}
 							continue
 						} else {
