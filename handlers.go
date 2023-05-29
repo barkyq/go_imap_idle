@@ -1,16 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/emersion/go-imap"
-	"github.com/emersion/go-imap/client"
-	"github.com/emersion/go-maildir"
 	"io"
 	"net/mail"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/emersion/go-imap"
+	"github.com/emersion/go-imap/client"
+	"github.com/emersion/go-maildir"
 )
 
 func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, mem *MemoryMailbox) error {
@@ -44,6 +46,8 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 		uid_done <- c.Fetch(uid_seq, uid_items, uid_chan)
 	}()
 	remote_uids := make(map[uint32]bool)
+
+	// sync flags
 	fchan := make(chan *FlagUpdateRequest)
 	var wg sync.WaitGroup
 	go func() {
@@ -98,6 +102,8 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 	go func() {
 		fetch_done <- c.UidFetch(fetch_seq, fetch_items, fetch_chan)
 	}()
+
+	buffer := new(bufio.Reader)
 	for msg := range fetch_chan {
 		fl := parseFlags(msg.Flags)
 		k, f, e := D.Create(fl)
@@ -105,8 +111,49 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 		if e != nil {
 			return e
 		}
-		if _, e := io.Copy(f, msg.GetBody(section)); e != nil {
+
+		if msg, e := mail.ReadMessage(msg.GetBody(section)); e != nil {
 			return e
+		} else {
+			if _, e = msg.Header.Date(); e != nil {
+				return e
+			}
+			for _, h := range []string{
+				"From",
+				"To",
+				"Subject",
+				"In-Reply-To",
+				"References",
+				"Date",
+				"Message-ID",
+				"MIME-Version",
+				"Content-Type",
+				"Content-Disposition",
+				"Content-Transfer-Encoding",
+			} {
+				if v := msg.Header.Get(h); v != "" {
+					fmt.Fprintf(f, "%s: %s\n", h, v)
+				}
+			}
+			fmt.Fprintf(f, "\n")
+			buffer.Reset(msg.Body)
+			for {
+				if b, e := buffer.ReadSlice('\r'); e == io.EOF {
+					break
+				} else if e != nil {
+					panic(e)
+				} else {
+					f.Write(b[:len(b)-1])
+				}
+				if t, e := buffer.Peek(1); e != nil {
+					return e
+				} else if t[0] == '\n' {
+					f.Write([]byte{'\n'})
+					buffer.Discard(1)
+				} else {
+					f.Write([]byte{'\r'})
+				}
+			}
 		}
 		if e := f.Close(); e != nil {
 			return e
@@ -131,7 +178,7 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 			// key is not in memory
 			var nuid uint32
 			if new_uids.Empty() {
-				fmt.Fprintf(os.Stderr, "uploading %s", mbox.Name)
+				fmt.Fprintf(os.Stderr, "uploading ")
 			}
 			// microsoft has a bug...
 			if microsoftp {
