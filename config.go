@@ -19,7 +19,9 @@ func LoadConfig(r io.Reader) (addr string, a sasl.Client, folder_list map[string
 
 	// load config from os.Stdin
 	dec := json.NewDecoder(r)
-	dec.Decode(&userinfo)
+	if e = dec.Decode(&userinfo); e != nil {
+		return
+	}
 	directory = userinfo["directory"]
 	os.MkdirAll(directory, os.ModePerm)
 

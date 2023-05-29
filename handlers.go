@@ -59,49 +59,14 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 		remote_uids[msg.Uid] = true
 		if key, ok := mem.Keys[msg.Uid]; ok == true {
 			// have the message in memory. sync flags
-			raw_flags := make([]maildir.Flag, 0)
-			var length int = 0
-			if cur_flags, e := D.Flags(key); e == nil {
-				length = len(cur_flags)
-				for _, fl := range cur_flags {
-					raw_flags = append(raw_flags, fl)
-				}
-			}
-			remote_flags := parseFlags(msg.Flags)
-			for _, t := range remote_flags {
-				raw_flags = append(raw_flags, t)
-			}
-			if len(raw_flags) == 0 {
-				continue
-			}
-			flags := make([]maildir.Flag, 0)
-			// to avoid repeats
-			for _, f := range []maildir.Flag{maildir.FlagSeen, maildir.FlagReplied} {
-				for _, a := range raw_flags {
-					if a == f {
-						flags = append(flags, f)
-						break
-					}
-				}
-			}
-			if length < len(flags) {
-				// some flags got added remote -> local
-				// fmt.Println("R -> L", msg.SeqNum, key)
-				if e := D.SetFlags(key, flags); e != nil {
-					return e
-				}
-			}
-			if len(remote_flags) < len(flags) {
-				// some flags got added local -> remote
-				// fmt.Println("L -> R", msg.SeqNum, key)
-				fflags := deparseFlags(flags)
+			if f, e := SyncFlags(key, D, msg.Flags); e != nil && f != nil {
 				wg.Add(1)
-				go func(seqnum uint32, out_flags []interface{}) {
+				go func(seqnum uint32, f []interface{}) {
 					defer wg.Done()
-					fchan <- &FlagUpdateRequest{seqnum, out_flags}
-				}(msg.SeqNum, fflags)
+					// send a FlagUpdateRequest
+					fchan <- &FlagUpdateRequest{seqnum, f}
+				}(msg.SeqNum, f)
 			}
-			continue
 		} else {
 			// don't have in memory, need to fetch
 			fetch_seq.AddNum(msg.Uid)

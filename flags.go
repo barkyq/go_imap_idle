@@ -33,3 +33,50 @@ func deparseFlags(in_flags []maildir.Flag) (out_flags []interface{}) {
 	}
 	return
 }
+
+func SyncFlags(key string, D maildir.Dir, raw_remote_flags []string) ([]interface{}, error) {
+	raw_flags := make([]maildir.Flag, 0)
+	var length int = 0
+	// get local flags
+	if cur_flags, e := D.Flags(key); e == nil {
+		length = len(cur_flags)
+		for _, fl := range cur_flags {
+			raw_flags = append(raw_flags, fl)
+		}
+	}
+	// get remote flags
+	remote_flags := parseFlags(raw_remote_flags)
+	for _, t := range remote_flags {
+		raw_flags = append(raw_flags, t)
+	}
+	if len(raw_flags) == 0 {
+		return nil, nil
+	}
+
+	local_and_global_flags := make([]maildir.Flag, 0)
+	// delete repeats
+	for _, f := range []maildir.Flag{maildir.FlagSeen, maildir.FlagReplied} {
+		for _, a := range raw_flags {
+			if a == f {
+				local_and_global_flags = append(local_and_global_flags, f)
+				break
+			}
+		}
+	}
+
+	if length < len(local_and_global_flags) {
+		// some flags got added remote -> local
+		// fmt.Println("R -> L", msg.SeqNum, key)
+		if e := D.SetFlags(key, local_and_global_flags); e != nil {
+			return nil, e
+		}
+	}
+
+	if len(remote_flags) < len(local_and_global_flags) {
+		// some flags got added local -> remote
+		// fmt.Println("L -> R", msg.SeqNum, key)
+		return deparseFlags(local_and_global_flags), nil
+	}
+
+	return nil, nil
+}
