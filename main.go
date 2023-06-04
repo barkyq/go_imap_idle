@@ -107,10 +107,6 @@ func main() {
 					// check keys compare to memory
 					// uploading new items (usually for sent)
 					if mb, ok := mem.Boxes[title]; ok {
-						// for k, v := range mb.Keys {
-						// 	fmt.Println(k, v)
-						// }
-						// os.Exit(0)
 						if addr == "outlook.office365.com:993" {
 							if e := UploadHandler(c, D, mbox, &mb, true); e != nil {
 								panic(e)

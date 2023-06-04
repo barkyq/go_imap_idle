@@ -139,11 +139,12 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 			buffer.Reset(msg.Body)
 			for {
 				if b, e := buffer.ReadSlice('\r'); e == io.EOF {
+					f.Write(b)
 					break
 				} else if e != nil {
 					panic(e)
 				} else {
-					f.Write(b[:len(b)-1])
+					f.Write(b)
 				}
 				if t, e := buffer.Peek(1); e != nil {
 					return e
