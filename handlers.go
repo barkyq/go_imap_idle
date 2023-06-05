@@ -118,42 +118,9 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 			if _, e = msg.Header.Date(); e != nil {
 				return e
 			}
-			for _, h := range []string{
-				"From",
-				"To",
-				"Subject",
-				"In-Reply-To",
-				"References",
-				"Date",
-				"Message-ID",
-				"MIME-Version",
-				"Content-Type",
-				"Content-Disposition",
-				"Content-Transfer-Encoding",
-			} {
-				if v := msg.Header.Get(h); v != "" {
-					fmt.Fprintf(f, "%s: %s\n", h, v)
-				}
-			}
-			fmt.Fprintf(f, "\n")
 			buffer.Reset(msg.Body)
-			for {
-				if b, e := buffer.ReadSlice('\r'); e == io.EOF {
-					f.Write(b)
-					break
-				} else if e != nil {
-					panic(e)
-				} else {
-					f.Write(b)
-				}
-				if t, e := buffer.Peek(1); e != nil {
-					return e
-				} else if t[0] == '\n' {
-					f.Write([]byte{'\n'})
-					buffer.Discard(1)
-				} else {
-					f.Write([]byte{'\r'})
-				}
+			if _, e := WriteMessage(msg.Header, buffer, f); e != nil {
+				panic(e)
 			}
 		}
 		if e := f.Close(); e != nil {
@@ -164,6 +131,7 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 }
 
 func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, mem *MemoryMailbox, microsoftp bool) error {
+	rb := new(bufio.Reader)
 	not_to_delete := make(map[string]bool)
 	if keys, e := D.Keys(); e == nil {
 		new_uids := new(imap.SeqSet)
@@ -208,25 +176,10 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 					if e != nil {
 						return e
 					}
-					for _, h := range []string{
-						"From",
-						"To",
-						"Subject",
-						"In-Reply-To",
-						"References",
-						"Date",
-						"Message-ID",
-						"MIME-Version",
-						"Content-Type",
-						"Content-Disposition",
-						"Content-Transfer-Encoding",
-					} {
-						if v := msg.Header.Get(h); v != "" {
-							fmt.Fprintf(buf, "%s: %s\n", h, v)
-						}
+					rb.Reset(msg.Body)
+					if _, e := WriteMessage(msg.Header, rb, buf); e != nil {
+						panic(e)
 					}
-					fmt.Fprintf(buf, "\n")
-					io.Copy(buf, msg.Body)
 				}
 				f.Close()
 			}
@@ -249,6 +202,7 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 			if e := D.Remove(key); e != nil {
 				return e
 			}
+			// TODO get append limit
 			if e := c.Append(mbox.Name, fl, date, buf); e != nil {
 				return e
 			}
