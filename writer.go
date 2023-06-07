@@ -30,27 +30,29 @@ func WriteMessage(headers mail.Header, rb *bufio.Reader, w io.Writer) (n int, e 
 	}
 	w.Write([]byte{'\n'})
 	for {
-		if b, e := rb.ReadSlice('\r'); e == io.EOF {
+		if b, isPrefix, e := rb.ReadLine(); e == io.EOF || isPrefix {
 			if k, e := w.Write(b); e != nil {
+				return n + k, e
+			} else {
 				n += k
-				return n, e
 			}
-			break
+			if e == io.EOF {
+
+				break
+			} else {
+				continue
+			}
 		} else if e != nil {
-			return n, e
-		} else {
-			if k, e := w.Write(b[:len(b)-1]); e != nil {
-				n += k
-				return n, e
+			panic(e)
+		} else if !isPrefix {
+			if k, e := w.Write(b); e != nil {
+				return n + k, e
+			} else {
+				w.Write([]byte{'\n'})
+				n += k + 1
 			}
-		}
-		if t, e := rb.Peek(1); e != nil {
-			return n, e
-		} else if t[0] == '\n' {
-			w.Write([]byte{'\n'})
-			rb.Discard(1)
 		} else {
-			w.Write([]byte{'\r'})
+			return n, fmt.Errorf("error writing message")
 		}
 	}
 	return n, nil
