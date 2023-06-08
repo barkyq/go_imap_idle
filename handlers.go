@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"net/mail"
 	"os"
 	"sync"
@@ -189,15 +188,20 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 				for _, i := range ttfl {
 					fl = append(fl, i.(string))
 				}
-			} else {
-				continue
-			}
-			if nukey, e := D.Copy(D, key); e == nil {
+				if nukey, e := D.Copy(D, key); e == nil {
+					mem.Keys[nuid] = nukey
+					not_to_delete[nukey] = true
+					new_uids.AddNum(nuid)
+				} else {
+					return e
+				}
+			} else if nukey, w, e := D.Create(nil); e == nil {
 				mem.Keys[nuid] = nukey
 				not_to_delete[nukey] = true
 				new_uids.AddNum(nuid)
-			} else {
-				return e
+				if _, e := w.Write(buf.Bytes()); e != nil {
+					return e
+				}
 			}
 			if e := D.Remove(key); e != nil {
 				return e
@@ -230,47 +234,5 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 			panic(err)
 		}
 	}
-	return nil
-}
-
-// ArchiveHandler just downloads everything remote -> local and delete on remote.
-func ArchiveHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus) error {
-	if e := D.Init(); e != nil {
-		return e
-	}
-	fetch_seq := new(imap.SeqSet)
-	fetch_seq.AddRange(1, mbox.Messages)
-	section := &imap.BodySectionName{Peek: true}
-	fetch_items := []imap.FetchItem{imap.FetchUid, imap.FetchFlags, section.FetchItem()}
-	fetch_chan := make(chan *imap.Message, 10)
-	done := make(chan error, 1)
-	go func() {
-		done <- c.Fetch(fetch_seq, fetch_items, fetch_chan)
-	}()
-	for msg := range fetch_chan {
-		fl := parseFlags(msg.Flags)
-		_, f, e := D.Create(fl)
-		if e != nil {
-			return e
-		}
-		if _, e := io.Copy(f, msg.GetBody(section)); e != nil {
-			return e
-		}
-		if e := f.Close(); e != nil {
-			return e
-		}
-	}
-	if e := <-done; e != nil {
-		return e
-	} else {
-		fmt.Fprintf(os.Stderr, "archiving %d from remote archive\n", mbox.Messages)
-	}
-	item := imap.FormatFlagsOp(imap.AddFlags, true)
-	flags := []interface{}{imap.DeletedFlag}
-	c.Store(fetch_seq, item, flags, nil)
-	if err := c.Expunge(nil); err != nil {
-		return err
-	}
-
 	return nil
 }

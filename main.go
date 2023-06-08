@@ -41,7 +41,6 @@ func main() {
 			}
 		}
 	}()
-
 	// timeout_ch := time.Tick(timeout)
 
 	// capture Ctrl-C signal
@@ -79,17 +78,7 @@ func main() {
 						fmt.Fprintf(os.Stderr, "%s connection error!\n", time.Now().Format("15:04:05"))
 						return
 					} else {
-						switch title {
-						case "archive":
-							if m.Messages > 0 {
-								if e := ArchiveHandler(c, D, m); e != nil {
-									panic(e)
-								}
-							}
-							continue
-						default:
-							mbox = m
-						}
+						mbox = m
 					}
 					if mem.Boxes[title].Keys == nil {
 						box := MemoryMailbox{
