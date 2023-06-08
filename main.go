@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,9 +17,23 @@ import (
 )
 
 func main() {
+	flag.Parse()
 	addr, a, folder_list, directory, mem, e := LoadConfig(os.Stdin)
 	if e != nil {
 		panic(e)
+	}
+	if *archive_flag {
+		s := filepath.Join(directory, "archive")
+		t := filepath.Join(directory, "offline")
+		if *reverse_mode {
+			if e := reverse(s, t); e != nil {
+				panic(e)
+			}
+		} else {
+			if e := forward(s, t); e != nil {
+				panic(e)
+			}
+		}
 	}
 	socket_chan := make(chan struct{})
 	go func() {
