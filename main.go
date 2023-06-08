@@ -34,6 +34,7 @@ func main() {
 				panic(e)
 			}
 		}
+		os.Exit(0)
 	}
 	socket_chan := make(chan struct{})
 	go func() {
@@ -111,11 +112,11 @@ func main() {
 					// uploading new items (usually for sent)
 					if mb, ok := mem.Boxes[title]; ok {
 						if addr == "outlook.office365.com:993" {
-							if e := UploadHandler(c, D, mbox, &mb, true); e != nil {
+							if e := UploadHandler(c, D, mbox, &mb, true, 11000); e != nil {
 								panic(e)
 							}
 						} else {
-							if e := UploadHandler(c, D, mbox, &mb, false); e != nil {
+							if e := UploadHandler(c, D, mbox, &mb, false, 20000); e != nil {
 								panic(e)
 							}
 						}

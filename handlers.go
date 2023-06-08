@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -129,11 +130,12 @@ func DownloadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, 
 	return <-fetch_done
 }
 
-func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, mem *MemoryMailbox, microsoftp bool) error {
+func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, mem *MemoryMailbox, microsoftp bool, limit int64) error {
 	rb := new(bufio.Reader)
 	not_to_delete := make(map[string]bool)
 	if keys, e := D.Keys(); e == nil {
 		new_uids := new(imap.SeqSet)
+		var first bool = true
 	OUTER:
 		for _, key := range keys {
 			for _, k := range mem.Keys {
@@ -145,8 +147,9 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 			}
 			// key is not in memory
 			var nuid uint32
-			if new_uids.Empty() {
-				fmt.Fprintf(os.Stderr, "uploading ")
+			if first {
+				fmt.Fprintf(os.Stderr, "uploading to %s ", mbox.Name)
+				first = false
 			}
 			// microsoft has a bug...
 			if microsoftp {
@@ -164,8 +167,15 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 				}
 			}
 			var date time.Time
+			var toobig bool
 			buf := bytes.NewBuffer(nil)
-			if f, e := D.Open(key); e != nil {
+			if s, e := D.Filename(key); e != nil {
+				return e
+			} else if info, e := os.Stat(s); e != nil {
+				return e
+			} else if info.Size() > limit {
+				toobig = true
+			} else if f, e := D.Open(key); e != nil {
 				return e
 			} else {
 				if msg, e := mail.ReadMessage(f); e != nil {
@@ -182,33 +192,40 @@ func UploadHandler(c *client.Client, D maildir.Dir, mbox *imap.MailboxStatus, me
 				}
 				f.Close()
 			}
-			var fl []string
-			if tfl, e := D.Flags(key); e == nil {
-				ttfl := deparseFlags(tfl)
-				for _, i := range ttfl {
-					fl = append(fl, i.(string))
+			if toobig {
+				if s, e := D.Filename(key); e != nil {
+					return e
+				} else if e := save_to_archive(filepath.Join(filepath.Dir(string(D)), "offline"), buf, s); e != nil {
+					return e
 				}
-				if nukey, e := D.Copy(D, key); e == nil {
+			} else {
+				var fl []string
+				if tfl, e := D.Flags(key); e == nil {
+					ttfl := deparseFlags(tfl)
+					for _, i := range ttfl {
+						fl = append(fl, i.(string))
+					}
+					if nukey, e := D.Copy(D, key); e == nil {
+						mem.Keys[nuid] = nukey
+						not_to_delete[nukey] = true
+						new_uids.AddNum(nuid)
+					} else {
+						return e
+					}
+				} else if nukey, w, e := D.Create(nil); e == nil {
 					mem.Keys[nuid] = nukey
 					not_to_delete[nukey] = true
 					new_uids.AddNum(nuid)
-				} else {
+					if _, e := w.Write(buf.Bytes()); e != nil {
+						return e
+					}
+				}
+				if e := c.Append(mbox.Name, fl, date, buf); e != nil {
 					return e
 				}
-			} else if nukey, w, e := D.Create(nil); e == nil {
-				mem.Keys[nuid] = nukey
-				not_to_delete[nukey] = true
-				new_uids.AddNum(nuid)
-				if _, e := w.Write(buf.Bytes()); e != nil {
+				if e := D.Remove(key); e != nil {
 					return e
 				}
-			}
-			if e := D.Remove(key); e != nil {
-				return e
-			}
-			// TODO get append limit
-			if e := c.Append(mbox.Name, fl, date, buf); e != nil {
-				return e
 			}
 		}
 		if !new_uids.Empty() {

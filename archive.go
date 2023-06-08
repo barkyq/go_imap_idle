@@ -11,6 +11,32 @@ import "fmt"
 var archive_flag = flag.Bool("a", false, "archive mode")
 var reverse_mode = flag.Bool("r", false, "reverse mode of operation")
 
+func save_to_archive(targetdir string, r io.Reader, original string) error {
+	hash := sha256.New()
+	buffer := make([]byte, 1024)
+	var digest [32]byte
+	if _, e := io.CopyBuffer(hash, r, buffer); e != nil {
+		return e
+	}
+	copy(digest[:], hash.Sum(nil))
+	hash.Reset()
+
+	first_byte := fmt.Sprintf("%02x", digest[0])
+	rest_bytes := fmt.Sprintf("%02x", digest[1:])
+	if i, e := os.Stat(filepath.Join(targetdir, first_byte)); e != nil {
+		if e := os.MkdirAll(filepath.Join(targetdir, first_byte), os.ModePerm); e != nil {
+			return e
+		}
+	} else if !i.IsDir() {
+		return fmt.Errorf("invalid target directory structure")
+	}
+	if e := os.Rename(original, filepath.Join(targetdir, first_byte, rest_bytes)); e != nil {
+		return e
+	} else {
+		return nil
+	}
+}
+
 func reverse(sourcedir, targetdir string) error {
 	file_tree := os.DirFS(targetdir)
 	buffer := make([]byte, 1024)
